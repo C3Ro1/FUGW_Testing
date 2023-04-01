@@ -1,63 +1,70 @@
-from datetime import time
 import torch
+from fugw.mappings import FUGWBarycenter
 from sklearn.gaussian_process.kernels import Matern
 import numpy as np
 import matplotlib.pyplot as plt
 
-import extensive_testing
-from extensive_testing.testeroni import FeketeGrid, diag_var_process, ar_coeff
-from fugw.mappings import FUGWBarycenter
+from noice_experiment.testeroni import FeketeGrid, diag_var_process, ar_coeff
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda:0" if use_cuda else "cpu")
 torch.backends.cudnn.benchmark = True
 
-from extensive_testing.experimental_environment.noice_experiment import utils
+import noice_experiment.utils as utils
 from fugw.solvers import FUGWSolver, FUGWSparseSolver
 
-Ds = []
-D_t = None
-
-
 ################
-#Experiment 2: Moritz_Model
+# Experiment 2: Moritz_Model
 ################
 # copy the class FeketeGrid(BaseGrid) from climnet.grids
 # get lon: list of longitude values, lat: list of latitude values
+# generate a Fakete-grid and save it as m times m matrix as numpy array
 
-#generate a Fakete-grid and save it as m times m matrix as numpy array
-
-m =  50
+m = 50
 
 fekete_grid = FeketeGrid(m)
-a  = fekete_grid.grid
+a = fekete_grid.grid
 
-cartesian_grid = extensive_testing.experimental_environment.noice_experiment.utils.spherical2cartesian(a['lon'],a['lat'])
-kernel = 1.0 * Matern(length_scale=0.2, nu=0.5)
-#cartasian grid from tupel to numpy array
+cartesian_grid = utils.spherical2cartesian(a['lon'], a['lat'])
+kernel = 1.0 * Matern(length_scale=0.2, nu=0.05)
+# cartasian grid from tupel to numpy array
 cartesian_grid = np.array(cartesian_grid).T
 
 cov = kernel(cartesian_grid)
 
-
-
 data = []
-for irun in range(2):
-    seed = int(time().second)
+weights_list = []
+geometry_list = []
+
+source_embeddings = torch.Tensor(cartesian_grid).to(device)
+for irun in range(4):
+    seed = irun
+    print(seed)
     np.random.seed(seed)
-    data.append(diag_var_process(ar_coeff, cov, 100))
-
-
+    F = diag_var_process(ar_coeff, cov, 5)
+    Ds = torch.cdist(source_embeddings, source_embeddings)
+    data.append(F)
+    geometry_list.append(Ds)
+    weights_list.append(np.ones(m))
 
 fugw_barycenter = FUGWBarycenter()
-fugw_barycenter.fit(
-    weights_list, features_list, geometry_list, device=device
-)
+_, features, geometry, plans, _, loss = fugw_barycenter.fit(weights_list,
+                        data,
+                        geometry_list,
+                        barycenter_size=50,
+                        solver="sinkhorn",
+                        device=device
+                        )
 
+'''barycenter_weights: np.array of size (barycenter_size)
+        barycenter_features: np.array of size (barycenter_size, n_features)
+        barycenter_geometry: np.array of size
+            (barycenter_size, barycenter_size)
+        plans: list of arrays
+        duals: list of (array, array)
+        losses_each_bar_step:'''
 
-print(cartesian_grid)
-
-fugw = FUGWSolver(
+'''fugw = FUGWSolver(
     nits_bcd=100,
     nits_uot=1000,
     tol_bcd=1e-7,
@@ -70,20 +77,16 @@ fugw = FUGWSolver(
     ibpp_eps_base=1e3,
 )
 
-ns = 100
-ds = 3
-nt = 100
-dt = 3
-nf = 3
 
-source_features = torch.rand(ns, nf).to(device)
-target_features = torch.zeros(nt, nf).to(device)
-source_embeddings = torch.rand(ns, ds).to(device)
-target_embeddings = torch.rand(nt, dt).to(device)
+source_embeddings = torch.Tensor(cartesian_grid).to(device)
+target_embeddings = torch.Tensor(cartesian_grid).to(device)
 
-F = torch.cdist(torch.Tensor(data).to(device), target_features)
+F = torch.cdist(torch.Tensor(data[0]).to(device), torch.Tensor(data[1]).to(device))
 Ds = torch.cdist(source_embeddings, source_embeddings)
+print(Ds)
 Dt = torch.cdist(target_embeddings, target_embeddings)
+print(Dt)
+print(F)
 
 Ds_normalized = Ds / Ds.max()
 Dt_normalized = Dt / Dt.max()
@@ -95,16 +98,35 @@ res = fugw.solve(
     eps=0.02,
     reg_mode="independent",
     F=F,
-    Ds=Ds_normalized,
-    Dt=Dt_normalized,
+    Ds=Ds,
+    Dt=Dt,
     init_plan=None,
     solver='mm',
     verbose=True,
 )
 
 pi = res["pi"]
+print(pi)
 plt.title("Optimal Coupling")
 plt.imshow(pi)
+plt.colorbar()
+plt.show()
+
+plt.title("Coupling Result")
+plt.imshow(Ds@pi)
+plt.colorbar()
+plt.show()'''
+
+'''fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(cartesian_grid[:,0], cartesian_grid[:,1], cartesian_grid[:,2], c='r', marker='o')
+for i in range(m):
+    for j in range(m):
+        ax.plot([cartesian_grid[i,0], cartesian_grid[j,0]], [cartesian_grid[i,1], cartesian_grid[j,1]], [cartesian_grid[i,2], cartesian_grid[j,2]], c='b')
+plt.show()'''
+
+'''plt.title("start distance matrix")
+plt.imshow(Ds)
 plt.colorbar()
 plt.show()
 
@@ -114,83 +136,8 @@ duals_gamma = res["duals_gamma"]
 loss_steps = res["loss_steps"]
 loss = res["loss"]
 loss_entropic = res["loss_entropic"]
-loss_times = res["loss_times"]
-
-
-'''
-# now data is a n_time x n_gridpoints matrix of the time series you generated. FUGW should recover the original distance matrix D_ij. Test tha
-
+loss_times = res["loss_times"]'''
 
 ################
-#Experiment 2: Moritz_Model
+# Experiment 2: Moritz_Model
 ################
-
-if D_t is not None:
-        plt.title("Target Distance Matrix")
-        plt.imshow(D_t)
-        plt.colorbar()
-        plt.show()
-
-init_plan = (
-    (ones(number_of_nodes_s,
-          number_of_nodes_s) / number_of_nodes_s * number_of_nodes_t * number_of_blocks_s * number_of_blocks_t).to(
-        device)
-)
-
-fugw = FUGWSolver(
-    nits_bcd=100,
-    nits_uot=1000,
-    tol_bcd=1e-7,
-    tol_uot=1e-7,
-    early_stopping_threshold=1e-5,
-    eval_bcd=2,
-    eval_uot=10,
-    # Set a high value of ibpp, otherwise nans appear in coupling.
-    # This will generally increase the computed fugw loss.
-    ibpp_eps_base=1e3,
-)
-
-DT = torch.Tensor(np.multiply(D_t, D_t)).to(device)
-F = torch.cdist(torch.Tensor(np.ones((number_of_nodes_s*number_of_blocks_s, 1))),
-                torch.Tensor(np.ones((number_of_nodes_t*number_of_blocks_t, 1))))
-
-out_loss_1 = []
-out_pi = []
-
-for DS in Ds:
-    for alpha in np.linspace(0.1, 0.9, 7):
-        res = fugw.solve(
-            alpha=alpha,
-            rho_s=2,
-            rho_t=3,
-            eps=0.02,
-            reg_mode="independent",
-            F=F,
-            Ds=DS,
-            Dt=DT,
-            init_plan=torch.Tensor(np.ones((number_of_nodes_s*number_of_blocks_s,
-                                            number_of_nodes_t*number_of_blocks_t))),
-            solver="mm",
-            verbose=True,
-        )
-        out_loss_1.append(res['loss_entropic'][-1])
-        out_pi.append(res['pi'])
-        pass
-
-duals_pi = res["duals_pi"]
-print(duals_pi)
-duals_gamma = res["duals_gamma"]
-print(duals_gamma)
-loss_steps = res["loss_steps"]
-print(loss_steps)
-loss = res["loss"]
-print(loss)
-loss_entropic = res["loss_entropic"]
-print(loss_entropic)
-loss_times = res["loss_times"]
-print(loss_times)
-
-################
-#Experiment 1: Stochastic_Block_Model
-################
-'''
