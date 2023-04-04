@@ -54,6 +54,10 @@ weights, features, geometry, plans, duals, loss = \
                         device=device,
                         nits_barycenter=100
                         )
+#3dplot the Ds arrays
+
+
+
 
 '''barycenter_weights: np.array of size (barycenter_size)
         barycenter_features: np.array of size (barycenter_size, n_features)
