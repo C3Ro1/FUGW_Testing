@@ -71,8 +71,8 @@ fugw = FUGWSolver(
 )
 
 DT = torch.Tensor(np.multiply(D_t, D_t)).to(device)
-F = torch.cdist(torch.Tensor(np.ones((number_of_nodes_s*number_of_blocks_s, 1))),
-                torch.Tensor(np.ones((number_of_nodes_t*number_of_blocks_t, 1))))
+F = torch.cdist(torch.Tensor(np.ones((number_of_nodes_s*number_of_blocks_s, 2048))),
+                torch.Tensor(np.ones((number_of_nodes_t*number_of_blocks_t, 2048))))
 
 out_loss = []
 out_pi = []

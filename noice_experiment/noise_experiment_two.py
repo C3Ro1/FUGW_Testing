@@ -23,12 +23,11 @@ from fugw.solvers import FUGWSolver, FUGWSparseSolver
 m = 50
 
 fekete_grid = FeketeGrid(m)
-a = fekete_grid.grid
+grid = fekete_grid.grid
 
-cartesian_grid = utils.spherical2cartesian(a['lon'], a['lat'])
-kernel = 1.0 * Matern(length_scale=0.2, nu=0.05)
-# cartasian grid from tupel to numpy array
-cartesian_grid = np.array(cartesian_grid).T
+cartesian_grid, source_embeddings = utils.spherical2distance(grid['lon'], grid['lat'])
+kernel = 1.0 * Matern(length_scale=0.2, nu=0.5)
+cartesian_grid = np.array(cartesian_grid[0][:][:]).T
 
 cov = kernel(cartesian_grid)
 
@@ -36,16 +35,19 @@ data = []
 weights_list = []
 geometry_list = []
 
-source_embeddings = torch.Tensor(cartesian_grid).to(device)
+print(np.shape(source_embeddings))
+
+
 for irun in range(4):
     seed = irun
     print(seed)
     np.random.seed(seed)
-    F = diag_var_process(ar_coeff, cov, 5)
-    Ds = torch.cdist(source_embeddings, source_embeddings)
+    F = diag_var_process(ar_coeff, cov, 1)
+
+    Ds =  torch.Tensor(source_embeddings).to(device)
     data.append(F)
     geometry_list.append(Ds)
-    weights_list.append(np.ones(m))
+    weights_list.append(torch.Tensor(np.ones(m)/m).to(device))
 
 fugw_barycenter = FUGWBarycenter()
 _, features, geometry, plans, _, loss = fugw_barycenter.fit(weights_list,
@@ -53,7 +55,8 @@ _, features, geometry, plans, _, loss = fugw_barycenter.fit(weights_list,
                         geometry_list,
                         barycenter_size=50,
                         solver="sinkhorn",
-                        device=device
+                        device=device,
+                        solver_params={'ibpp_eps_base':1e4}
                         )
 
 '''barycenter_weights: np.array of size (barycenter_size)
