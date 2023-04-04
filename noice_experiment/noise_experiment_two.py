@@ -27,7 +27,6 @@ grid = fekete_grid.grid
 
 cartesian_grid, source_embeddings = utils.spherical2distance(grid['lon'], grid['lat'])
 kernel = 1.0 * Matern(length_scale=0.2, nu=0.5)
-cartesian_grid = np.array(cartesian_grid[0][:][:]).T
 
 cov = kernel(cartesian_grid)
 
@@ -35,28 +34,25 @@ data = []
 weights_list = []
 geometry_list = []
 
-print(np.shape(source_embeddings))
-
-
-for irun in range(4):
+for irun in range(50):
     seed = irun
     print(seed)
     np.random.seed(seed)
-    F = diag_var_process(ar_coeff, cov, 1)
-
-    Ds =  torch.Tensor(source_embeddings).to(device)
+    F = torch.Tensor(diag_var_process(ar_coeff, cov, 1)).to(device)
+    Ds = torch.Tensor(source_embeddings).to(device)
     data.append(F)
     geometry_list.append(Ds)
-    weights_list.append(torch.Tensor(np.ones(m)/m).to(device))
+    weights_list.append(torch.Tensor(np.ones(m) / m).to(device))
 
-fugw_barycenter = FUGWBarycenter()
-_, features, geometry, plans, _, loss = fugw_barycenter.fit(weights_list,
+fugw_barycenter = FUGWBarycenter(alpha=0.5,force_psd=False,learn_geometry=True)
+weights, features, geometry, plans, duals, loss = \
+    fugw_barycenter.fit(weights_list,
                         data,
                         geometry_list,
                         barycenter_size=50,
                         solver="sinkhorn",
                         device=device,
-                        solver_params={'ibpp_eps_base':1e4}
+                        nits_barycenter=100
                         )
 
 '''barycenter_weights: np.array of size (barycenter_size)

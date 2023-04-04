@@ -62,13 +62,11 @@ def spherical2cartesian(lon, lat):
 
 
 def cartesian2distance(cartesian_3):
-    shape = np.shape(cartesian_3)[1]
-    print(shape)
-    return [[np.sqrt(np.dot(cartesian_3[:][i] -
-                           cartesian_3[:][j],
-
-                           cartesian_3[:][i] -
-                           cartesian_3[:][j]))
+    shape,cartesian_3 = np.shape(cartesian_3)[1], cartesian_3.T
+    return [[np.sqrt(np.dot(cartesian_3[i] -
+                            cartesian_3[j],
+                            cartesian_3[i] -
+                            cartesian_3[j]))
              if i != j
              else 0
              for j in range(shape)]
@@ -76,4 +74,4 @@ def cartesian2distance(cartesian_3):
 
 
 def spherical2distance(lon, lat):
-    return spherical2cartesian(lon, lat), cartesian2distance(spherical2cartesian(lon, lat))
+    return np.transpose(spherical2cartesian(lon, lat)), cartesian2distance(np.array(spherical2cartesian(lon, lat)))
