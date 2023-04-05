@@ -4,6 +4,7 @@ from fugw.mappings import FUGWBarycenter
 from sklearn.gaussian_process.kernels import Matern
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.manifold import MDS
 
 from noice_experiment.testeroni import FeketeGrid, diag_var_process, ar_coeff
 
@@ -27,42 +28,107 @@ fekete_grid = FeketeGrid(m)
 grid = fekete_grid.grid
 
 cartesian_grid, source_embeddings = utils.spherical2distance(grid['lon'], grid['lat'])
-kernel = 1.0 * Matern(length_scale=0.2, nu=0.05)
 
-cov = kernel(cartesian_grid)
 
 data = []
 weights_list = []
 geometry_list = []
-noise_in_features = False
+noise_in_features = True
 
-
-for irun in range(5):
+for _ in range(1):
     if noise_in_features:
-        for noise_level in numpy.linspace():
-            seed = irun
-            print(seed)
-            np.random.seed(seed)
-            F = torch.Tensor(diag_var_process(ar_coeff, cov, 1)).to(device)
-            Ds = torch.Tensor(source_embeddings).to(device)
-            data.append(F)
-            geometry_list.append(Ds)
-            weights_list.append(torch.Tensor(np.ones(m) / m).to(device))
-            pass
+        for noise_level in numpy.linspace(0.01,0.99,15):
+            for irun in range(5):
+                kernel = 1.0 * Matern(length_scale=0.2, nu=noise_level)
+                cov = kernel(cartesian_grid)
+                print(cov)
+                seed = irun
+                print(seed)
+                np.random.seed(seed)
+                F = torch.Tensor(diag_var_process(ar_coeff, cov, 1)).to(device)
+                Ds = torch.Tensor(source_embeddings).to(device)
+                data.append(F)
+                geometry_list.append(Ds)
+                weights_list.append(torch.Tensor(np.ones(m) / m).to(device))
+                pass
+            fugw_barycenter = FUGWBarycenter(alpha=0.5, force_psd=False, learn_geometry=True)
+            weights, features, geometry, plans, duals, loss = \
+                fugw_barycenter.fit(weights_list,
+                                    data,
+                                    geometry_list,
+                                    barycenter_size=50,
+                                    solver="sinkhorn",
+                                    device=device,
+                                    nits_barycenter=10
+                                    )
+
+            # 3d plot for the cartesian grid showing the positions x y and z in space
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.scatter(cartesian_grid[:, 0], cartesian_grid[:, 1], cartesian_grid[:, 2], c='r', marker='o')
+            ax.set_xlabel('X Label')
+            ax.set_ylabel('Y Label')
+            ax.set_zlabel('Z Label')
+            plt.show()
+
+            geometry_grid = geometry.cpu().detach().numpy()
+            embedding = MDS(n_components=3, dissimilarity='precomputed', random_state=42)
+            geometry_grid = embedding.fit_transform(geometry_grid)
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.scatter(geometry_grid[:, 0], geometry_grid[:, 1], geometry_grid[:, 2], c='r', marker='o')
+            ax.set_xlabel('X Label')
+            ax.set_ylabel('Y Label')
+            ax.set_zlabel('Z Label')
+            plt.show()
+
+            fugw = FUGWSolver(
+                nits_bcd=100,
+                nits_uot=1000,
+                tol_bcd=1e-7,
+                tol_uot=1e-7,
+                early_stopping_threshold=1e-5,
+                eval_bcd=2,
+                eval_uot=10,
+                ibpp_eps_base=1e3,
+            )
+
+            F = torch.cdist(torch.Tensor(np.ones((m * m, 1))),
+                            torch.Tensor(np.ones((m * m, 1))))
+
+            res = fugw.solve(
+                alpha=0.5,
+                rho_s=2,
+                rho_t=3,
+                eps=0.02,
+                reg_mode="independent",
+                F=F,
+                Ds=geometry,
+                Dt=Ds,
+                init_plan=None,
+                solver="mm",
+                verbose=True,
+            )
+            loss = res['loss_entropic'][-1]
+            pi = res['pi']
+
+            print(loss)
+            plt.imshow(pi)
+            plt.colorbar()
+            plt.show()
         pass
 
     else:
         for noice_type in utils.noice_types:
-            F = torch.Tensor(np.ones((50,1))).to(device)
+            F = torch.Tensor(np.ones((1,50))).to(device)
             Ds = torch.Tensor(noice_type(source_embeddings)).to(device)
             data.append(F)
             geometry_list.append(Ds)
             weights_list.append(torch.Tensor(np.ones(m) / m).to(device))
         pass
     pass
-
-
-fugw_barycenter = FUGWBarycenter(alpha=0.5,force_psd=False,learn_geometry=True)
+'''
+fugw_barycenter = FUGWBarycenter(alpha=0.5, force_psd=False, learn_geometry=True)
 weights, features, geometry, plans, duals, loss = \
     fugw_barycenter.fit(weights_list,
                         data,
@@ -73,7 +139,7 @@ weights, features, geometry, plans, duals, loss = \
                         nits_barycenter=10
                         )
 
-#3d plot for the cartesian grid showing the positions x y and z in space
+# 3d plot for the cartesian grid showing the positions x y and z in space
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.scatter(cartesian_grid[:, 0], cartesian_grid[:, 1], cartesian_grid[:, 2], c='r', marker='o')
@@ -82,18 +148,18 @@ ax.set_ylabel('Y Label')
 ax.set_zlabel('Z Label')
 plt.show()
 
+geometry_grid = geometry.cpu().detach().numpy()
+embedding = MDS(n_components=3, dissimilarity='precomputed', random_state=42)
+geometry_grid = embedding.fit_transform(geometry_grid)
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(geometry_grid[:, 0], geometry_grid[:, 1], geometry_grid[:, 2], c='r', marker='o')
+ax.set_xlabel('X Label')
+ax.set_ylabel('Y Label')
+ax.set_zlabel('Z Label')
+plt.show()
 
-
-
-'''barycenter_weights: np.array of size (barycenter_size)
-        barycenter_features: np.array of size (barycenter_size, n_features)
-        barycenter_geometry: np.array of size
-            (barycenter_size, barycenter_size)
-        plans: list of arrays
-        duals: list of (array, array)
-        losses_each_bar_step:'''
-
-'''fugw = FUGWSolver(
+fugw = FUGWSolver(
     nits_bcd=100,
     nits_uot=1000,
     tol_bcd=1e-7,
@@ -101,71 +167,35 @@ plt.show()
     early_stopping_threshold=1e-5,
     eval_bcd=2,
     eval_uot=10,
-    # Set a high value of ibpp, otherwise nans appear in coupling.
-    # This will generally increase the computed fugw loss.
     ibpp_eps_base=1e3,
 )
 
 
-source_embeddings = torch.Tensor(cartesian_grid).to(device)
-target_embeddings = torch.Tensor(cartesian_grid).to(device)
+F = torch.cdist(torch.Tensor(np.ones((m*m, 1))),
+                torch.Tensor(np.ones((m*m, 1))))
 
-F = torch.cdist(torch.Tensor(data[0]).to(device), torch.Tensor(data[1]).to(device))
-Ds = torch.cdist(source_embeddings, source_embeddings)
-print(Ds)
-Dt = torch.cdist(target_embeddings, target_embeddings)
-print(Dt)
-print(F)
-
-Ds_normalized = Ds / Ds.max()
-Dt_normalized = Dt / Dt.max()
 
 res = fugw.solve(
-    alpha=0.8,
+    alpha=0.5,
     rho_s=2,
     rho_t=3,
     eps=0.02,
     reg_mode="independent",
     F=F,
-    Ds=Ds,
-    Dt=Dt,
+    Ds=geometry,
+    Dt=Ds,
     init_plan=None,
-    solver='mm',
+    solver="mm",
     verbose=True,
-)
+    )
+loss = res['loss_entropic'][-1]
+pi = res['pi']
 
-pi = res["pi"]
-print(pi)
-plt.title("Optimal Coupling")
+print(loss)
 plt.imshow(pi)
 plt.colorbar()
 plt.show()
-
-plt.title("Coupling Result")
-plt.imshow(Ds@pi)
-plt.colorbar()
-plt.show()'''
-
-'''fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(cartesian_grid[:,0], cartesian_grid[:,1], cartesian_grid[:,2], c='r', marker='o')
-for i in range(m):
-    for j in range(m):
-        ax.plot([cartesian_grid[i,0], cartesian_grid[j,0]], [cartesian_grid[i,1], cartesian_grid[j,1]], [cartesian_grid[i,2], cartesian_grid[j,2]], c='b')
-plt.show()'''
-
-'''plt.title("start distance matrix")
-plt.imshow(Ds)
-plt.colorbar()
-plt.show()
-
-gamma = res["gamma"]
-duals_pi = res["duals_pi"]
-duals_gamma = res["duals_gamma"]
-loss_steps = res["loss_steps"]
-loss = res["loss"]
-loss_entropic = res["loss_entropic"]
-loss_times = res["loss_times"]'''
+'''
 
 ################
 # Experiment 2: Moritz_Model

@@ -84,10 +84,10 @@ def spherical2noisy_features():
     return None
 
 #TODO
-def pointwise_noise():
-    pass
+def pointwise_noise(input):
+    return input
 
-def hemisphere_noise():
-    pass
+def hemisphere_noise(input):
+    return input
 
 noice_types = [pointwise_noise, hemisphere_noise]
