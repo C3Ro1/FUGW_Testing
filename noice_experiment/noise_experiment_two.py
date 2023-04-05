@@ -1,3 +1,4 @@
+import numpy
 import torch
 from fugw.mappings import FUGWBarycenter
 from sklearn.gaussian_process.kernels import Matern
@@ -26,23 +27,40 @@ fekete_grid = FeketeGrid(m)
 grid = fekete_grid.grid
 
 cartesian_grid, source_embeddings = utils.spherical2distance(grid['lon'], grid['lat'])
-kernel = 1.0 * Matern(length_scale=0.2, nu=0.5)
+kernel = 1.0 * Matern(length_scale=0.2, nu=0.05)
 
 cov = kernel(cartesian_grid)
 
 data = []
 weights_list = []
 geometry_list = []
+noise_in_features = False
 
-for irun in range(50):
-    seed = irun
-    print(seed)
-    np.random.seed(seed)
-    F = torch.Tensor(diag_var_process(ar_coeff, cov, 1)).to(device)
-    Ds = torch.Tensor(source_embeddings).to(device)
-    data.append(F)
-    geometry_list.append(Ds)
-    weights_list.append(torch.Tensor(np.ones(m) / m).to(device))
+
+for irun in range(5):
+    if noise_in_features:
+        for noise_level in numpy.linspace():
+            seed = irun
+            print(seed)
+            np.random.seed(seed)
+            F = torch.Tensor(diag_var_process(ar_coeff, cov, 1)).to(device)
+            Ds = torch.Tensor(source_embeddings).to(device)
+            data.append(F)
+            geometry_list.append(Ds)
+            weights_list.append(torch.Tensor(np.ones(m) / m).to(device))
+            pass
+        pass
+
+    else:
+        for noice_type in utils.noice_types:
+            F = torch.Tensor(np.ones((50,1))).to(device)
+            Ds = torch.Tensor(noice_type(source_embeddings)).to(device)
+            data.append(F)
+            geometry_list.append(Ds)
+            weights_list.append(torch.Tensor(np.ones(m) / m).to(device))
+        pass
+    pass
+
 
 fugw_barycenter = FUGWBarycenter(alpha=0.5,force_psd=False,learn_geometry=True)
 weights, features, geometry, plans, duals, loss = \
@@ -52,9 +70,17 @@ weights, features, geometry, plans, duals, loss = \
                         barycenter_size=50,
                         solver="sinkhorn",
                         device=device,
-                        nits_barycenter=100
+                        nits_barycenter=10
                         )
-#3dplot the Ds arrays
+
+#3d plot for the cartesian grid showing the positions x y and z in space
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.scatter(cartesian_grid[:, 0], cartesian_grid[:, 1], cartesian_grid[:, 2], c='r', marker='o')
+ax.set_xlabel('X Label')
+ax.set_ylabel('Y Label')
+ax.set_zlabel('Z Label')
+plt.show()
 
 
 

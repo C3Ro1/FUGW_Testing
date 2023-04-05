@@ -61,6 +61,9 @@ def spherical2cartesian(lon, lat):
     return x, y, z
 
 
+# imshow of distance matrix of unit sphere
+
+
 def cartesian2distance(cartesian_3):
     shape,cartesian_3 = np.shape(cartesian_3)[1], cartesian_3.T
     return [[np.sqrt(np.dot(cartesian_3[i] -
@@ -75,3 +78,16 @@ def cartesian2distance(cartesian_3):
 
 def spherical2distance(lon, lat):
     return np.transpose(spherical2cartesian(lon, lat)), cartesian2distance(np.array(spherical2cartesian(lon, lat)))
+
+#TODO
+def spherical2noisy_features():
+    return None
+
+#TODO
+def pointwise_noise():
+    pass
+
+def hemisphere_noise():
+    pass
+
+noice_types = [pointwise_noise, hemisphere_noise]
